@@ -46,8 +46,28 @@ REQUIRED = {
 """Deliverable -> a file that must exist for it (relative to the project root)."""
 
 
+def check_packages() -> None:
+    """Stop with setup instructions if a package the rebuild needs isn't installed for this Python.
+
+    Raises:
+        SystemExit: Naming the missing packages and how to install them.
+    """
+    import importlib.util
+
+    needed = {"matplotlib": "requirements.txt", "pandas": "requirements.txt", "pytest": "requirements.txt",
+              "docx": "requirements-docs.txt", "pptx": "requirements-docs.txt"}
+    missing = [name for name in needed if importlib.util.find_spec(name) is None]
+    if missing:
+        files = sorted({needed[name] for name in missing})
+        raise SystemExit(
+            f"Missing packages for {sys.executable}: {', '.join(missing)}.\n"
+            "Activate the project's virtual environment first (source .venv/bin/activate), "
+            f"or install them with: pip install {' '.join('-r ' + f for f in files)}")
+
+
 def rebuild() -> None:
     """Regenerate the diagram, evidence, report and slides, and save the test results."""
+    check_packages()
     python = sys.executable
     for script in ("tools/make_diagram.py", "tools/make_report.py", "tools/make_slides.py"):
         print(f"Running {script}...")

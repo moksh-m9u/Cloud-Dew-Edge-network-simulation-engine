@@ -8,8 +8,12 @@ TEAM = [
 ]
 """(name, enrollment number) for each member, in the order they appear."""
 
-CONTRIBUTIONS = {name: "[fill in: what this member built or wrote]" for name, _ in TEAM}
-"""Each member's contribution for the report's table; edit these lines before submitting."""
+CONTRIBUTIONS = {
+    "Moksh": "Placement policies, simulator, experiments",
+    "Bhavya Bisht": "VM manager and security, Streamlit app",
+    "Dhruv Sharma": "Results export and charts, testing",
+    "Bhuwan Chugh": "Report, slides, architecture diagram",
+}
 
 
 def team_line() -> str:

@@ -36,7 +36,7 @@ python -m edgefogsim
 python -m edgefogsim web
 ```
 
-It opens at http://localhost:8501 (change it with `--port 8600`). Stop it with Ctrl+C.
+It opens at http://localhost:8501 (change it with `--port 8600`). Stop it with Ctrl+C. It starts on a **Home** page that explains the simulator (tiers, the latency and score formulas with every term, policies, VMs, security, experiments), with a step-by-step guide, a quick-start button that loads the sample tasks and compares all policies, and next-step buttons at the bottom of every page.
 
 ### Screenshots
 
@@ -129,7 +129,7 @@ Each experiment states its expected outcome, runs, then checks the expectation a
 |-------------|-------|
 | Architecture diagram | [docs/architecture.png](docs/architecture.png) |
 | Report (6 pages) | [docs/report/EdgeFogSim_Report.docx](docs/report/EdgeFogSim_Report.docx) ([PDF](docs/report/EdgeFogSim_Report.pdf)) |
-| Presentation (7 slides, with speaker notes) | [docs/report/EdgeFogSim_Slides.pptx](docs/report/EdgeFogSim_Slides.pptx) ([PDF](docs/report/EdgeFogSim_Slides.pdf)) |
+| Presentation (7 slides with speaker notes; slide 3 explains every formula term with a worked example) | [docs/report/EdgeFogSim_Slides.pptx](docs/report/EdgeFogSim_Slides.pptx) ([PDF](docs/report/EdgeFogSim_Slides.pdf)) |
 | Experiments write-up and evidence | [docs/evidence/experiments/experiments.md](docs/evidence/experiments/experiments.md) |
 | Test results | [docs/evidence/test_results.txt](docs/evidence/test_results.txt) |
 

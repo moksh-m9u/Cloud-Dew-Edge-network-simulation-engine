@@ -59,3 +59,31 @@ def estimate_latency_ms(task: Task, node: Node, settings: Settings) -> float:
     util = min(utilisation_after(task, node), cap)
     processing_ms = task.work_units / node.speed_factor
     return node.base_latency_ms + processing_ms / (1 - util)
+
+
+def latency_breakdown(task: Task, node: Node, settings: Settings) -> dict[str, float]:
+    """Every term of the latency formula for one task on one node, for explaining it step by step.
+
+    Args:
+        task: The task to place.
+        node: The candidate node, with its current load (before placement).
+        settings: Resolved settings.
+
+    Returns:
+        ``network_ms`` (d), ``work_units`` (W), ``speed`` (s), ``load_after`` (u, before the cap),
+        ``congestion`` (C), ``processing_ms`` (W ÷ s), ``latency_ms`` (L) and ``deadline_ms`` (D).
+    """
+    cap = settings.simulation["qos"]["congestion_cap"]
+    load_after = utilisation_after(task, node)
+    congestion = 1 / (1 - min(load_after, cap))
+    processing_ms = task.work_units / node.speed_factor
+    return {
+        "network_ms": node.base_latency_ms,
+        "work_units": task.work_units,
+        "speed": node.speed_factor,
+        "load_after": load_after,
+        "congestion": congestion,
+        "processing_ms": processing_ms,
+        "latency_ms": node.base_latency_ms + processing_ms * congestion,
+        "deadline_ms": deadline_ms(task, settings),
+    }
