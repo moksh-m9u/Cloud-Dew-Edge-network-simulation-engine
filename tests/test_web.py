@@ -249,3 +249,40 @@ def test_results_page_runs_experiments(monkeypatch):
     at = click(at, "Run experiments")
     assert not at.exception
     assert list(at.dataframe[0].value["result"]) == ["as expected"] * 4
+
+
+def test_home_page_explains_before_login(monkeypatch):
+    """Logged out, Home explains the app, shows the formulas, and keeps the guide buttons disabled."""
+    at = open_app(monkeypatch, user=None)
+    assert at.title[0].value == "EdgeFogSim"
+    assert any("L \;=\; d" in latex.value for latex in at.latex)
+    assert at.button(key="quick_start").disabled and at.button(key="open_Workload").disabled
+
+
+def test_home_is_the_default_page_after_login(monkeypatch):
+    """After logging in the app opens on Home, with the guide's buttons enabled."""
+    at = open_app(monkeypatch)
+    assert at.sidebar.radio(key="page").value == "Home"
+    assert not at.button(key="open_Workload").disabled
+
+
+def test_quick_start_loads_samples_and_opens_placement(monkeypatch):
+    """Quick start loads the 10 sample tasks, compares all policies and opens the Placement page."""
+    at = open_app(monkeypatch, user="admin")
+    at.button(key="quick_start").click().run()
+    assert at.sidebar.radio(key="page").value == "Placement"
+    assert len(at.session_state.tasks) == 10 and len(at.session_state.comparison) == 4
+    assert at.header[0].value == "Placement"
+
+
+def test_guide_and_next_step_buttons_navigate(monkeypatch):
+    """Home's Open buttons and each page's next-step buttons switch pages."""
+    at = open_app(monkeypatch)
+    at.button(key="open_Workload").click().run()
+    assert at.header[0].value == "Workload"
+    at.button(key="next_Workload_Placement").click().run()
+    assert at.header[0].value == "Placement"
+    at.button(key="next_Placement_Results").click().run()
+    assert at.header[0].value == "Results"
+    at.button(key="next_Results_Home").click().run()
+    assert at.title[0].value == "EdgeFogSim"

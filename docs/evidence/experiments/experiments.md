@@ -122,9 +122,9 @@ admin → read task T01 and VM vm-0001: allowed
 
 | timestamp | actor | target_tenant | resource | outcome |
 |---|---|---|---|---|
-| 2026-11-02T22:50:46 | hospital-b | hospital-a | task T01 | DENIED |
-| 2026-11-02T22:50:46 | hospital-b | hospital-a | VM vm-0001 | DENIED |
-| 2026-11-02T22:50:46 | hospital-b | hospital-a | VM vm-0001 | DENIED |
+| 2026-11-02T23:18:25 | hospital-b | hospital-a | task T01 | DENIED |
+| 2026-11-02T23:18:25 | hospital-b | hospital-a | VM vm-0001 | DENIED |
+| 2026-11-02T23:18:25 | hospital-b | hospital-a | VM vm-0001 | DENIED |
 
 **Expected vs actual**
 

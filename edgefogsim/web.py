@@ -42,7 +42,8 @@ from edgefogsim.config import (  # noqa: E402
     settings_as_json,
 )
 from edgefogsim.models import SENSITIVITIES, Node, Tenant  # noqa: E402
-from edgefogsim.policies import POLICIES  # noqa: E402
+from edgefogsim.policies import POLICIES, CapacityAware  # noqa: E402
+from edgefogsim.qos import latency_breakdown  # noqa: E402
 from edgefogsim.security import AccessDenied, AuditLog, find_task, find_vm, visible  # noqa: E402
 from edgefogsim.results import (  # noqa: E402
     decisions_table,
@@ -59,13 +60,40 @@ from edgefogsim.simulator import (  # noqa: E402
     compare_policies,
     create_vm,
     empty_cluster,
+    fresh_nodes,
     run_workload,
     submit,
 )
 from edgefogsim.workload import generate_tasks, load_tasks, make_task  # noqa: E402
 
-# Pages in the sidebar, in order. Later phases add Results, VMs and more.
-PAGES = ("Nodes", "Workload", "Placement", "VMs", "Security", "Results", "Settings")
+# Pages in the sidebar, in order. Home is shown first and to anyone not logged in.
+PAGES = ("Home", "Nodes", "Workload", "Placement", "VMs", "Security", "Results", "Settings")
+
+# What you do on each page, for the Home page's step-by-step guide.
+GUIDE = [
+    ("Nodes", "See the Edge, Fog and Cloud computers: their size, network distance, speed and how busy they are."),
+    ("Workload", "Create tasks: generate random ones (the same seed gives the same tasks), upload a CSV or JSON "
+                 "file, or add one by hand."),
+    ("Placement", "Pick a policy and run it. Every task gets a node, or is rejected, with the reason. Or compare "
+                  "all four policies on the same tasks."),
+    ("VMs", "See the virtual machines your tasks run in. Create one ahead of time, stop one to free its node, or "
+            "place a single task now."),
+    ("Security", "Look up a task or VM by id. Another tenant's records are refused (ACCESS DENIED) and logged."),
+    ("Results", "Charts and CSV/JSON downloads. The admin can also change a node and compare before/after, and "
+                "run the four experiments."),
+    ("Settings", "Every number the simulator uses, where it came from, and a form to change it."),
+]
+
+# The "next step" buttons at the bottom of each page: (page to open, button label).
+NEXT_STEPS = {
+    "Nodes": [("Workload", "Build a workload")],
+    "Workload": [("Placement", "Run a placement policy")],
+    "Placement": [("Results", "See charts and export"), ("VMs", "Look at the VMs")],
+    "VMs": [("Security", "Try the security check"), ("Placement", "Back to placement")],
+    "Security": [("Results", "See the results")],
+    "Results": [("Settings", "Change a setting"), ("Home", "Back to Home")],
+    "Settings": [("Placement", "Run placement again"), ("Home", "Back to Home")],
+}
 
 # Sample task file offered on the Workload page.
 SAMPLE_TASKS = ROOT / "examples" / "tasks_sample.csv"
@@ -113,6 +141,202 @@ def sidebar(settings: Settings) -> tuple[Tenant | None, str, "st.delta_generator
         st.sidebar.success(f"Logged in as **{user.tenant_id}** ({user.role})")
     page = st.sidebar.radio("Page", PAGES, key="page")
     return user, page, st.sidebar.empty()
+
+
+def go_to(page: str) -> None:
+    """Button callback: switch the sidebar's page selection (applied before the next run draws it)."""
+    st.session_state.page = page
+
+
+def next_steps(page: str) -> None:
+    """Draw the "next step" buttons at the bottom of a page.
+
+    Args:
+        page: The page being shown; its entry in ``NEXT_STEPS`` decides the buttons.
+    """
+    steps = NEXT_STEPS.get(page)
+    if not steps:
+        return
+    st.divider()
+    st.caption("Next step")
+    for column, (target, label) in zip(st.columns(3), steps):
+        column.button(f"{label} →", key=f"next_{page}_{target}", on_click=go_to, args=(target,), width="stretch")
+
+
+def quick_start() -> None:
+    """Button callback: load the sample tasks, run every policy on them, and open the Placement page."""
+    settings = st.session_state.settings
+    tasks = load_tasks(SAMPLE_TASKS, settings)
+    st.session_state.tasks = tasks
+    st.session_state.comparison = compare_policies(settings, tasks)
+    st.session_state.last_run = run_workload(settings, tasks, "capacity")
+    st.session_state.page = "Placement"
+
+
+def home_page(settings: Settings, user: Tenant | None) -> None:
+    """The start page: what the simulator is, a quick start, a step-by-step guide and how it works.
+
+    Args:
+        settings: Current settings; every number shown is read from them.
+        user: Who is logged in, or None (the guide's buttons then stay disabled until login).
+    """
+    st.title("EdgeFogSim")
+    st.markdown("#### Where should a computing task run: on a small **Edge** node next to the user, a **Fog** "
+                "node nearby, or the big **Cloud** far away?")
+    st.write("Nearby nodes answer fast but are small; the cloud is huge but far away. EdgeFogSim simulates that "
+             "decision. You create tasks, a placement policy picks a node for each one, the task runs in a "
+             "virtual machine there, and you see how long it took, whether it met its deadline, and how busy "
+             "every node got. Nothing runs on real servers: every computer, task and VM is data in the program.")
+    if user is None:
+        st.info("Choose who you are in the sidebar to start. **hospital-a** and **hospital-b** are tenants: each "
+                "sees only their own tasks and VMs. **admin** sees everything and can change nodes.")
+
+    columns = st.columns(len(settings.nodes))
+    for column, node in zip(columns, settings.nodes):
+        column.metric(f"{node.tier.capitalize()} · {node.id}", f"{node.cpu_cores:g} CPU")
+        column.caption(f"{node.memory_gb:g} GB · {node.base_latency_ms:g} ms away · speed {node.speed_factor:g}")
+
+    st.subheader("Quick start")
+    st.write("Load the 10 sample tasks, run all four placement policies on them, and jump straight to the "
+             "decisions and the comparison.")
+    st.button("Load the sample tasks and compare policies →", key="quick_start", type="primary",
+              on_click=quick_start, disabled=user is None)
+
+    st.subheader("How to use it")
+    for number, (page, what) in enumerate(GUIDE, start=1):
+        text, button = st.columns([6, 1])
+        text.markdown(f"**{number}. {page}**: {what}")
+        button.button("Open", key=f"open_{page}", on_click=go_to, args=(page,), disabled=user is None,
+                      width="stretch")
+
+    st.subheader("How it works")
+    tiers, latency, policies, vms, security, experiments = st.tabs(
+        ["Edge, Fog and Cloud", "Latency formula", "Placement policies", "Virtual machines", "Security",
+         "Experiments"])
+    with tiers:
+        _home_tiers(settings)
+    with latency:
+        _home_latency(settings)
+    with policies:
+        _home_policies(settings)
+    with vms:
+        _home_vms(settings)
+    with security:
+        _home_security(settings)
+    with experiments:
+        _home_experiments()
+
+
+def _home_tiers(settings: Settings) -> None:
+    """Home tab: the three tiers and the trade-off between them."""
+    st.write("Each tier trades distance against size. Edge is your own kitchen: instant, but one stove. Fog is "
+             "the café down the street. Cloud is the chain's central kitchen across the city: huge, but far.")
+    good_for = {"edge": "urgent, small tasks", "fog": "medium tasks that still need to be quick",
+                "cloud": "big tasks that can wait a moment"}
+    st.dataframe(pd.DataFrame([{
+        "Tier": n.tier.capitalize(), "Node": n.id, "CPU cores": n.cpu_cores, "Memory (GB)": n.memory_gb,
+        "Network delay (ms)": n.base_latency_ms, "Speed": n.speed_factor, "Good for": good_for.get(n.tier, ""),
+    } for n in settings.nodes]), hide_index=True, width="stretch")
+    st.caption("Change any node in config/nodes.json, with --nodes my_nodes.json, or (admin) on the Results page.")
+
+
+def _home_latency(settings: Settings) -> None:
+    """Home tab: the latency and congestion formulas, what each term means, and a worked example."""
+    qos = settings.simulation["qos"]
+    deadlines = qos["deadlines_ms"]
+    st.write("For every task and candidate node, the simulator estimates the delay **L** before placing it:")
+    st.latex(r"L \;=\; d \;+\; \frac{W}{s} \times C")
+    st.latex(r"C \;=\; \frac{1}{1 - \min(u,\ " + f"{qos['congestion_cap']:g}" + r")}")
+    st.latex(r"u \;=\; \frac{\text{CPU in use} + \text{task CPU}}{\text{node CPU cores}}")
+    nodes = settings.nodes
+    work = settings.simulation["generator"]["work_range"]
+    st.markdown(f"""
+| Term | Meaning | Default values |
+|---|---|---|
+| **L** | Latency: time from sending the task to getting the answer (ms) | result of the formula |
+| **d** | Network delay to reach the node (ms) | {", ".join(f"{n.tier} {n.base_latency_ms:g}" for n in nodes)} |
+| **W** | Work units: how much processing the task needs | high {work["high"][0]}–{work["high"][1]}, medium {work["medium"][0]}–{work["medium"][1]}, low {work["low"][0]}–{work["low"][1]} |
+| **s** | Node speed (Fog = 1, so W ÷ s is processing time in ms) | {", ".join(f"{n.tier} {n.speed_factor:g}" for n in nodes)} |
+| **C** | Congestion: how much a busy node slows work down | 1 when idle, 2 at half load, 10 at 90% load |
+| **u** | CPU load on the node after placing the task (0 to 1) | capped at {qos["congestion_cap"]:.0%} so C stays finite |
+| **D** | Deadline, set by the task's sensitivity (ms) | high {deadlines["high"]:g}, medium {deadlines["medium"]:g}, low {deadlines["low"]:g} |
+""")
+    st.write("A task **succeeds** if it is placed and **L ≤ D**. Congestion is a simple queueing (M/M/1-style) "
+             "model: like a queue at a counter, a nearly full node gets slow very fast.")
+    task = load_tasks(SAMPLE_TASKS, settings)[0]
+    edge = next(n for n in fresh_nodes(settings) if n.tier == "edge")
+    b = latency_breakdown(task, edge, settings)
+    st.markdown(f"""**Worked example**: sample task {task.id} ({task.cpu_cores:g} CPU, W = {task.work_units:g}, {task.sensitivity} sensitivity) on an empty {edge.id}:
+
+- u = (0 + {task.cpu_cores:g}) ÷ {edge.cpu_cores:g} = **{b["load_after"]:g}**
+- C = 1 ÷ (1 − {b["load_after"]:g}) = **{b["congestion"]:g}**
+- L = {b["network_ms"]:g} + ({b["work_units"]:g} ÷ {b["speed"]:g}) × {b["congestion"]:g} = {b["network_ms"]:g} + {b["processing_ms"]:.2f} × {b["congestion"]:g} = **{b["latency_ms"]:.1f} ms**
+- D = {b["deadline_ms"]:g} ms, so {b["latency_ms"]:.1f} {"≤" if b["latency_ms"] <= b["deadline_ms"] else ">"} {b["deadline_ms"]:g}: **{"on time" if b["latency_ms"] <= b["deadline_ms"] else "late"}**
+""")
+
+
+def _home_policies(settings: Settings) -> None:
+    """Home tab: the four policies, the Capacity-Aware rules and its score formula with an example."""
+    policy = settings.simulation["policy"]
+    w = policy["capacity_weights"]
+    st.dataframe(pd.DataFrame([{"Policy": p.label, "Key": key, "How it decides": p.summary}
+                               for key, p in POLICIES.items()]), hide_index=True, width="stretch")
+    st.markdown(f"""**Capacity-Aware** is the rule-based algorithm the brief asks for:
+
+1. **Prefer tiers by urgency**: high → Edge, Fog, Cloud · medium → Fog, Edge, Cloud · low → Cloud, Fog, Edge.
+2. **Rule out** nodes that can't host the task (no room in a VM or for a new one), would pass {policy["headroom"]:.0%} CPU load, or would miss the deadline.
+3. **Score** every node left (formula below) and place the task on the highest score. If that isn't its first-choice tier, it's an **offload**.
+4. If nothing passes, retry once allowing nodes up to 100% load; if still nothing, **reject** with the reason.
+""")
+    st.latex(r"S \;=\; " + f"{w['tier']:g}" + r"\,T \;+\; " + f"{w['slack']:g}" + r"\,\frac{D - L}{D} \;+\; "
+             + f"{w['free']:g}" + r"\,(1 - u)")
+    st.markdown("""
+| Term | Meaning |
+|---|---|
+| **S** | Score of a node for this task; the highest wins |
+| **T** | Tier preference: 1 for the first-choice tier, 0.5 for the second, 0 for the third |
+| **(D − L) ÷ D** | Share of the deadline left over: more spare time scores higher |
+| **1 − u** | Share of the node's CPU left free after placing the task: emptier nodes score higher |
+| weights | How much each part counts; change them in Settings (policy.capacity_weights) |
+""")
+    task = load_tasks(SAMPLE_TASKS, settings)[0]
+    choice = CapacityAware(settings).choose(task, fresh_nodes(settings))
+    ranking = ", ".join(f"{node} **{score:.2f}**" for node, score in sorted(choice.scores.items(),
+                                                                          key=lambda kv: -kv[1]))
+    st.write(f"Example: for sample task {task.id} on empty nodes the scores are {ranking}, so it goes to "
+             f"**{choice.node.id}**. **TOPSIS** instead ranks the nodes that meet the deadline by how close they "
+             "are to an ideal node on latency, free CPU and free memory.")
+
+
+def _home_vms(settings: Settings) -> None:
+    """Home tab: shared tenant VMs and the two kinds of node usage."""
+    sizes = settings.simulation["vm"]["sizes"]
+    st.markdown(f"""A **VM** is a slice of one node, owned by one tenant. When a task is placed on a node it **joins** one of its tenant's VMs there if that VM has room; otherwise a **new VM** is created, sized to the tier's default ({", ".join(f"{t} {s['cpu_cores']:g} CPU / {s['memory_gb']:g} GB" for t, s in sizes.items())}) or to the task if it's bigger. Tenants never share a VM.
+
+Each node therefore shows two numbers: **reserved** (CPU held by VMs, which decides whether a new VM fits) and **load** (CPU actually used by tasks, which drives latency). An empty VM reserves room but doesn't slow anything down. Stopping a VM frees its whole slice, so a task rejected earlier may now fit: try it on the **VMs** page.
+""")
+
+
+def _home_security(settings: Settings) -> None:
+    """Home tab: tenant isolation and the audit log."""
+    st.markdown(f"""Logging in means choosing a tenant id: no passwords exist anywhere, as the brief requires. One rule decides access: **a tenant may see and act on their own tasks and VMs; the admin may see and act on everything.**
+
+Lists simply hide other tenants' rows. Asking for another tenant's record by id (looking it up, stopping its VM, placing its task) is refused with **ACCESS DENIED** and written to the audit log (`{settings.get("security.audit_log")}`). Try it on the **Security** page while logged in as hospital-b, with task T01.
+""")
+
+
+def _home_experiments() -> None:
+    """Home tab: the four required experiments."""
+    st.markdown("""
+| Experiment | Question | What it shows |
+|---|---|---|
+| **E1** Policy comparison | Is the rule-based policy better? | The same 20 tasks through all four policies: the deadline-aware ones run nothing late |
+| **E2** Overload | What happens when a node is full? | Edge 90% busy, then 10 urgent tasks: they are moved to Fog or rejected with a reason |
+| **E3** Unauthorised access | Can one tenant see another's data? | Every attempt is refused and logged; the admin can still read it |
+| **E4** Node change | What if a node gets bigger or slower? | More Edge CPU helps; a slower Cloud pushes medium tasks out |
+
+Each one states its expected outcome first and checks it against the actual numbers. The admin can run all four on the **Results** page, or run `python run_experiments.py`.
+""")
 
 
 def nodes_page(settings: Settings) -> None:
@@ -458,10 +682,8 @@ def main() -> None:
     init_state()
     settings = st.session_state.settings
     user, page, task_count = sidebar(settings)
-    if user is None:
-        st.title("EdgeFogSim")
-        st.write("Simulate placing computing tasks on Edge, Fog and Cloud nodes.")
-        st.info("Choose who you are in the sidebar to start.")
+    if user is None or page == "Home":
+        home_page(settings, user)
     elif page == "Nodes":
         nodes_page(settings)
     elif page == "Workload":
@@ -476,6 +698,8 @@ def main() -> None:
         results_page(settings, user)
     else:
         settings_page(st.session_state.settings)
+    if user is not None:
+        next_steps(page)
     task_count.caption(f"{len(st.session_state.tasks)} tasks loaded")
 
 

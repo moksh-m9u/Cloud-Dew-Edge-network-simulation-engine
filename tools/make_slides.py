@@ -1,7 +1,7 @@
 """Write the presentation: ``python tools/make_slides.py`` → ``docs/report/EdgeFogSim_Slides.pptx``.
 
-Seven 16:9 slides (title, system, algorithm, three results slides, conclusion)
-with speaker notes. Numbers come from a fresh experiment run in
+Seven 16:9 slides with speaker notes: title, architecture, formulas (every term
+explained, with a worked example), algorithm, E1, E2–E4, conclusion. Numbers come from a fresh experiment run in
 ``docs/evidence/`` and the E1 chart is a native PowerPoint chart, so it can be
 restyled in PowerPoint. Re-run this script after changing code or settings.
 """
@@ -23,7 +23,9 @@ from team import TEAM  # noqa: E402
 
 from edgefogsim.config import load_settings  # noqa: E402
 from edgefogsim.experiments import ExperimentRun  # noqa: E402
-from edgefogsim.simulator import run_workload  # noqa: E402
+from edgefogsim.policies import CapacityAware  # noqa: E402
+from edgefogsim.qos import latency_breakdown  # noqa: E402
+from edgefogsim.simulator import fresh_nodes, run_workload  # noqa: E402
 from edgefogsim.workload import load_tasks  # noqa: E402
 
 OUTPUT = ROOT / "docs" / "report" / "EdgeFogSim_Slides.pptx"
@@ -56,10 +58,10 @@ def write_slides(run: ExperimentRun, path: Path = OUTPUT) -> Path:
     e1, e2, e3, e4 = run.experiments
     title_slide(prs)
     system_slide(prs)
+    formula_slide(prs)
     algorithm_slide(prs)
     policy_slide(prs, e1)
-    stress_slide(prs, e2, e3)
-    change_slide(prs, e4)
+    stress_slide(prs, e2, e3, e4)
     conclusion_slide(prs, run)
     path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(path)
@@ -92,44 +94,112 @@ def system_slide(prs) -> None:
               "manager runs the task inside one of that tenant's VMs; results are exported as CSV, JSON and charts.")
 
 
-def algorithm_slide(prs) -> None:
-    """Slide 3: Capacity-Aware rules, the latency model and a worked example."""
+def formula_slide(prs) -> None:
+    """Slide 3: the latency, congestion and score formulas, what every term means, and a worked example."""
     settings = load_settings()
-    policy, qos = settings.simulation["policy"], settings.simulation["qos"]
+    qos, policy = settings.simulation["qos"], settings.simulation["policy"]
+    w, d = policy["capacity_weights"], qos["deadlines_ms"]
+    nodes = settings.nodes
+    s = _slide(prs, WHITE)
+    _title(s, "How latency and the placement score are calculated")
+
+    _card(s, Inches(0.6), Inches(1.35), Inches(7.6), Inches(3.15))
+    _text(s, "Latency of a task on a node", Inches(0.9), Inches(1.5), Inches(7.0), Inches(0.4), 17, INK, bold=True)
+    _text(s, "L = d + (W ÷ s) × C          C = 1 ÷ (1 − u)", Inches(0.9), Inches(1.95), Inches(7.0),
+          Inches(0.5), 24, NAVY, font=HEAD, bold=True)
+    _terms(s, [
+        ("L", "latency: time until the answer comes back (ms)"),
+        ("d", "network delay to the node: " + ", ".join(f"{n.tier} {n.base_latency_ms:g}" for n in nodes) + " ms"),
+        ("W", "work units: how much processing the task needs"),
+        ("s", "node speed: " + ", ".join(f"{n.tier} {n.speed_factor:g}" for n in nodes) + " (W ÷ s = ms of work)"),
+        ("C", "congestion: 1 when idle, 2 at half load, 10 at 90% load"),
+        ("u", f"node CPU load after adding the task, 0 to 1 (capped at {qos['congestion_cap']:.0%})"),
+    ], Inches(0.9), Inches(2.6))
+
+    _card(s, Inches(0.6), Inches(4.7), Inches(7.6), Inches(2.5))
+    _text(s, "Placement score (Capacity-Aware)", Inches(0.9), Inches(4.85), Inches(7.0), Inches(0.4), 17, INK,
+          bold=True)
+    _text(s, f"S = {w['tier']:g}·T + {w['slack']:g}·(D − L) ÷ D + {w['free']:g}·(1 − u)", Inches(0.9),
+          Inches(5.28), Inches(7.0), Inches(0.5), 22, NAVY, font=HEAD, bold=True)
+    _terms(s, [
+        ("T", "tier preference: 1st choice 1, 2nd 0.5, 3rd 0"),
+        ("D", f"deadline by sensitivity: high {d['high']:g}, medium {d['medium']:g}, low {d['low']:g} ms"),
+        ("(D−L)÷D", "share of the deadline left over; success means L ≤ D"),
+        ("1 − u", "share of the node's CPU still free after adding the task"),
+    ], Inches(0.9), Inches(5.82), symbol_width=Inches(1.15))
+
+    task = load_tasks(ROOT / "examples" / "tasks_sample.csv", settings)[0]
+    edge = next(n for n in fresh_nodes(settings) if n.tier == "edge")
+    b = latency_breakdown(task, edge, settings)
+    scores = CapacityAware(settings).choose(task, fresh_nodes(settings)).scores
+    slack = (b["deadline_ms"] - b["latency_ms"]) / b["deadline_ms"]
+    _card(s, Inches(8.45), Inches(1.35), Inches(4.3), Inches(5.85))
+    _text(s, f"Worked example: {task.id} on {edge.id}", Inches(8.7), Inches(1.5), Inches(3.9), Inches(0.4), 17,
+          INK, bold=True)
+    _text(s, f"{task.cpu_cores:g} CPU · W = {task.work_units:g} · {task.sensitivity} → D = {b['deadline_ms']:g} ms",
+          Inches(8.7), Inches(1.95), Inches(3.9), Inches(0.4), 13, MUTED)
+    steps = [
+        f"u = (0 + {task.cpu_cores:g}) ÷ {edge.cpu_cores:g} = {b['load_after']:g}",
+        f"C = 1 ÷ (1 − {b['load_after']:g}) = {b['congestion']:g}",
+        f"L = {b['network_ms']:g} + ({b['work_units']:g} ÷ {b['speed']:g}) × {b['congestion']:g}",
+        f"   = {b['network_ms']:g} + {b['processing_ms']:.2f} × {b['congestion']:g} = {b['latency_ms']:.1f} ms",
+        f"{b['latency_ms']:.1f} ≤ {b['deadline_ms']:g}  →  on time",
+        f"S = {w['tier']:g}·1 + {w['slack']:g}·{slack:.2f} + {w['free']:g}·{1 - b['load_after']:g}",
+        f"   = {scores[edge.id]:.2f}",
+    ]
+    _text(s, "\n".join(steps), Inches(8.7), Inches(2.5), Inches(3.9), Inches(3.3), 15, INK)
+    others = ", ".join(f"{node} {score:.2f}" for node, score in scores.items() if node != edge.id)
+    _text(s, f"Other nodes: {others}. Highest score wins, so {task.id} goes to {edge.id}.", Inches(8.7),
+          Inches(5.95), Inches(3.9), Inches(0.9), 13, MUTED)
+    _notes(s, "Latency L is network delay d plus processing time W divided by speed s, stretched by congestion C. "
+              "C comes from the node's CPU load u after adding the task: an idle node has C = 1, a half-loaded "
+              "node doubles processing time, and a 90% loaded node makes it ten times slower, like a queue. "
+              "A task succeeds if L is within its deadline D. Capacity-Aware then scores each node that passes "
+              "its filters: tier preference, the share of the deadline left over, and the CPU left free, with "
+              "weights 0.5, 0.3 and 0.2. Walk through the worked example on the right: T01 on the empty Edge "
+              "node has u = 0.5, so C = 2 and L = 18.3 ms, inside its 25 ms deadline, and Edge scores highest.")
+
+
+def algorithm_slide(prs) -> None:
+    """Slide 4: the Capacity-Aware rules, the four sample decisions, and the other policies."""
+    settings = load_settings()
+    policy = settings.simulation["policy"]
     w = policy["capacity_weights"]
     s = _slide(prs, WHITE)
     _title(s, "Capacity-Aware: filter, score, then offload or reject")
     steps = [
-        ("Prefer tiers by urgency", "high → Edge, medium → Fog, low → Cloud"),
-        ("Filter out nodes", f"no room for the task's VM, CPU load over {policy['headroom']:.0%}, or the deadline "
-                             "would be missed"),
-        ("Score the rest", f"{w['tier']:g} × tier preference + {w['slack']:g} × time to spare + "
-                           f"{w['free']:g} × free CPU"),
-        ("Place or reject", "best score wins (offload if not first tier); if none fits, reject with the reason"),
+        ("Prefer tiers by urgency", "high → Edge, Fog, Cloud · medium → Fog first · low → Cloud first"),
+        ("Filter out nodes", f"no room for the task's VM, CPU load over {policy['headroom']:.0%}, or L > D "
+                             "(the deadline would be missed)"),
+        ("Score the rest", f"S = {w['tier']:g}·T + {w['slack']:g}·(D − L) ÷ D + {w['free']:g}·(1 − u); "
+                           "highest wins"),
+        ("Offload or reject", "not first-choice tier = offload, with the reason; nothing passes (even at 100% "
+                              "load) = reject, naming the failed check on each node"),
     ]
-    y = Inches(1.55)
+    y = Inches(1.5)
     for i, (head, body) in enumerate(steps, start=1):
         _circle_number(s, i, Inches(0.8), y + Inches(0.05))
-        _text(s, head, Inches(1.55), y, Inches(5.4), Inches(0.45), 18, INK, bold=True)
-        _text(s, body, Inches(1.55), y + Inches(0.45), Inches(5.4), Inches(0.75), 14, MUTED)
-        y += Inches(1.3)
-    _card(s, Inches(7.4), Inches(1.55), Inches(5.2), Inches(1.75))
-    _text(s, "Latency model", Inches(7.65), Inches(1.65), Inches(4.8), Inches(0.4), 16, INK, bold=True)
-    _text(s, "network + (work ÷ speed) × congestion\ncongestion = 1 ÷ (1 − CPU load)", Inches(7.65), Inches(2.1),
-          Inches(4.8), Inches(0.8), 15, INK)
-    deadlines = qos["deadlines_ms"]
-    _text(s, f"Deadlines: high {deadlines['high']:g} ms · medium {deadlines['medium']:g} ms · low "
-             f"{deadlines['low']:g} ms", Inches(7.65), Inches(2.85), Inches(4.8), Inches(0.4), 12, MUTED)
+        _text(s, head, Inches(1.55), y, Inches(5.5), Inches(0.45), 18, INK, bold=True)
+        _text(s, body, Inches(1.55), y + Inches(0.45), Inches(5.5), Inches(0.8), 14, MUTED)
+        y += Inches(1.35)
     worked = run_workload(settings, load_tasks(ROOT / "examples" / "tasks_sample.csv", settings)[:4], "capacity")
-    rows = [["Task", "Sensitivity", "Result"]] + [
-        [d.task.id, d.task.sensitivity,
+    rows = [["Task", "Needs", "Result"]] + [
+        [f"{d.task.id} ({d.task.sensitivity})", f"{d.task.cpu_cores:g} CPU, W {d.task.work_units:g}",
          ("rejected" if not d.placed else f"{d.node_id}{' (offload)' if d.offloaded else ''}, {d.latency_ms:.0f} ms")]
         for d in worked.decisions]
-    _table(s, rows, Inches(7.4), Inches(3.6), Inches(5.2), [Inches(0.9), Inches(1.5), Inches(2.8)])
-    _text(s, "Sample tasks T01–T04 on empty nodes.", Inches(7.4), Inches(6.2), Inches(5.2), Inches(0.4), 12, MUTED)
-    _notes(s, "Capacity-Aware is the rule-based algorithm the brief asks for. Explain the four steps, then the "
-              "worked example: T01 fits on Edge; T02 is offloaded to Fog because Edge would be full; T03 goes "
-              "to Cloud; T04 is too big for Edge and Fog and Cloud is too far for a high-urgency deadline.")
+    _text(s, "Sample tasks on empty nodes", Inches(7.4), Inches(1.5), Inches(5.3), Inches(0.4), 17, INK, bold=True)
+    _table(s, rows, Inches(7.4), Inches(2.0), Inches(5.3), [Inches(1.6), Inches(1.6), Inches(2.1)])
+    _card(s, Inches(7.4), Inches(4.4), Inches(5.3), Inches(2.4))
+    _text(s, "Compared against", Inches(7.65), Inches(4.55), Inches(4.8), Inches(0.4), 16, INK, bold=True)
+    _text(s, "Latency-First: nearest node with room, ignores deadlines\nCloud-Only: every task to the cloud\n"
+             "TOPSIS: ranks nodes on latency, free CPU and free memory together", Inches(7.65), Inches(5.0),
+          Inches(4.8), Inches(1.7), 14, INK)
+    _notes(s, "Capacity-Aware is the rule-based algorithm the brief asks for. It prefers a tier by urgency, rules "
+              "out nodes that have no room, are over 85% loaded or would miss the deadline, scores the rest with "
+              "the formula from the previous slide, and offloads or rejects with a reason. In the sample: T01 "
+              "fits on Edge; T02 is offloaded to Fog because Edge would be 100% loaded; T03 is low urgency so it "
+              "goes to Cloud; T04 needs 20 CPUs, more than Edge or Fog have, and Cloud's 80 ms network delay "
+              "already exceeds its 25 ms deadline, so it is rejected.")
 
 
 def policy_slide(prs, e1) -> None:
@@ -170,62 +240,71 @@ def policy_slide(prs, e1) -> None:
               "before placing, so they reject what they cannot finish in time instead of running it late.")
 
 
-def stress_slide(prs, e2, e3) -> None:
-    """Slide 5: E2 overload and E3 unauthorised access side by side."""
+def stress_slide(prs, e2, e3, e4) -> None:
+    """Slide 6: E2 overload, E3 unauthorised access and E4 node changes as three cards."""
     s = _slide(prs, WHITE)
-    _title(s, "Overload is offloaded or rejected; other tenants are refused")
+    _title(s, "Overload, security and node changes behave as expected")
+    width, gap, top, height = Inches(3.85), Inches(0.29), Inches(1.4), Inches(5.6)
+    xs = [Inches(0.6) + (width + gap) * i for i in range(3)]
+
     rows = {r[0]: r for r in e2.tables[0][2]}
     cap, lf = rows["Capacity-Aware"], rows["Latency-First"]
-    _card(s, Inches(0.6), Inches(1.5), Inches(5.95), Inches(5.3))
-    _text(s, "E2 · Overload", Inches(0.9), Inches(1.65), Inches(5.4), Inches(0.5), 20, INK, bold=True, font=HEAD)
-    _text(s, " ".join(e2.setup[:2]), Inches(0.9), Inches(2.15), Inches(5.4), Inches(0.8), 13, MUTED)
-    for i, (value, label, color) in enumerate(((cap[4], "offloaded to Fog", TIER["fog"]),
-                                               (cap[3], "rejected, with a reason", BAD),
-                                               (cap[2], "late", GOOD))):
-        _stat(s, str(value), label, Inches(0.9) + Inches(1.8) * i, Inches(3.1), color, width=Inches(1.7), size=40)
-    _text(s, f"Latency-First, same burst: {lf[1]} on time, {lf[2]} late.", Inches(0.9), Inches(4.75), Inches(5.4),
-          Inches(0.5), 14, INK)
-    _text(s, "No node is ever allocated beyond its capacity.", Inches(0.9), Inches(5.3), Inches(5.4),
-          Inches(0.5), 14, INK)
-    _card(s, Inches(6.8), Inches(1.5), Inches(5.95), Inches(5.3))
-    _text(s, "E3 · Unauthorised access", Inches(7.1), Inches(1.65), Inches(5.4), Inches(0.5), 20, INK, bold=True,
+    x = xs[0]
+    _card(s, x, top, width, height)
+    _text(s, "E2 · Overload", x + Inches(0.25), top + Inches(0.15), Inches(3.4), Inches(0.5), 20, INK, bold=True,
           font=HEAD)
-    attempts = [q.split(" → ")[1].split(":")[0] for q in e3.quotes if " → " in q and "ACCESS DENIED" in q]
+    _text(s, "Edge already 90% busy, then 10 urgent tasks", x + Inches(0.25), top + Inches(0.7), Inches(3.4),
+          Inches(0.6), 13, MUTED)
+    for i, (value, label, color) in enumerate(((cap[4], "offloaded", TIER["fog"]),
+                                               (cap[3], "rejected", BAD), (cap[2], "late", GOOD))):
+        _stat(s, str(value), label, x + Inches(0.25) + Inches(1.15) * i, top + Inches(1.35), color,
+              width=Inches(1.1), size=36)
+    _text(s, "Offloaded tasks went to Fog in time; every rejection names the check that failed.\n"
+             f"Latency-First on the same burst: {lf[1]} on time, {lf[2]} late.\n"
+             "No node is ever allocated beyond its capacity.", x + Inches(0.25), top + Inches(2.75), Inches(3.4),
+          Inches(2.4), 14, INK)
+
+    x = xs[1]
+    _card(s, x, top, width, height)
+    _text(s, "E3 · Unauthorised access", x + Inches(0.25), top + Inches(0.15), Inches(3.4), Inches(0.5), 20, INK,
+          bold=True, font=HEAD)
     actor = e3.quotes[0].split(" → ")[0]
-    _text(s, f"Logged in as {actor}, trying another tenant's records:", Inches(7.1), Inches(2.15), Inches(5.4),
-          Inches(0.5), 13, MUTED)
-    y = Inches(2.75)
+    _text(s, f"{actor} tries another tenant's task and VM", x + Inches(0.25), top + Inches(0.7), Inches(3.4),
+          Inches(0.6), 13, MUTED)
+    attempts = [q.split(" → ")[1].split(":")[0] for q in e3.quotes if " → " in q and "ACCESS DENIED" in q]
+    y = top + Inches(1.4)
     for attempt in attempts:
-        _pill(s, "DENIED", Inches(7.1), y)
-        _text(s, attempt, Inches(8.4), y + Inches(0.06), Inches(4.1), Inches(0.4), 15, INK)
+        _pill(s, "DENIED", x + Inches(0.25), y)
+        _text(s, attempt, x + Inches(1.5), y + Inches(0.06), Inches(2.2), Inches(0.4), 14, INK)
         y += Inches(0.6)
-    held = sum(h for _, h in e3.checks)
-    _text(s, f"Each refusal is one line in the audit log; the VM keeps running; the admin can read both records "
-             f"({held}/{len(e3.checks)} checks).", Inches(7.1), Inches(4.75), Inches(5.4), Inches(1.0), 14, INK)
-    _notes(s, "E2 shows the brief's overload scenario: tasks that don't fit are moved to another suitable node "
-              "or rejected with a reason. E3 shows the unauthorised access attempt: ACCESS DENIED for every "
-              "attempt, recorded in a CSV audit log.")
+    _text(s, "Each refusal is one line in the CSV audit log. The VM keeps running; the admin can still read both "
+             "records.", x + Inches(0.25), top + Inches(3.3), Inches(3.4), Inches(1.6), 14, INK)
 
-
-def change_slide(prs, e4) -> None:
-    """Slide 6: E4 before/after node capacity and latency changes."""
-    s = _slide(prs, WHITE)
-    _title(s, "More Edge CPU helps; a slower Cloud pushes medium tasks out")
-    for i, (title, headers, rows) in enumerate(e4.tables):
-        x = Inches(0.6) + Inches(6.2) * i
-        _card(s, x, Inches(1.5), Inches(5.95), Inches(5.3))
-        _text(s, title.split(": ", 1)[1], x + Inches(0.3), Inches(1.65), Inches(5.4), Inches(0.5), 19, INK,
-              bold=True, font=HEAD)
-        keep = [r for r in rows if r[0] in ("on time", "rejected", "avg latency ms", "tasks on edge",
-                                            "tasks on cloud")]
-        _table(s, [headers] + keep, x + Inches(0.3), Inches(2.3), Inches(5.35),
-               [Inches(2.35), Inches(1.5), Inches(1.5)], size=15)
-        checks = e4.checks[3 * i:3 * i + 3]
-        _text(s, "\n".join(f"{'✓' if held else '✗'} {statement}" for statement, held in checks),
-              x + Inches(0.3), Inches(5.05), Inches(5.35), Inches(1.6), 13, INK)
-    _notes(s, "E4 changes one node at a time and re-runs the same 20 tasks. Doubling Edge CPU lets Edge take more "
-              "urgent tasks. Raising Cloud latency from 80 to 150 ms makes Cloud too slow for medium tasks' 100 ms "
-              "deadline, while low-sensitivity tasks still finish on time.")
+    x = xs[2]
+    _card(s, x, top, width, height)
+    _text(s, "E4 · Node changes", x + Inches(0.25), top + Inches(0.15), Inches(3.4), Inches(0.5), 20, INK,
+          bold=True, font=HEAD)
+    _text(s, "Same 20 tasks, one node changed at a time", x + Inches(0.25), top + Inches(0.7), Inches(3.4),
+          Inches(0.6), 13, MUTED)
+    y = top + Inches(1.35)
+    for title, _, table_rows in e4.tables:
+        change = title.split(": ", 1)[1]
+        metrics = {r[0]: r for r in table_rows}
+        lines = [f"on time {metrics['on time'][1]} → {metrics['on time'][2]}",
+                 f"rejected {metrics['rejected'][1]} → {metrics['rejected'][2]}"]
+        if "cpu_cores" in change:
+            lines.append(f"tasks on edge {metrics['tasks on edge'][1]} → {metrics['tasks on edge'][2]}")
+        else:
+            lines.append(f"avg latency {metrics['avg latency ms'][1]} → {metrics['avg latency ms'][2]} ms")
+        _text(s, change, x + Inches(0.25), y, Inches(3.4), Inches(0.4), 15, NAVY, bold=True)
+        _text(s, "\n".join(lines), x + Inches(0.25), y + Inches(0.42), Inches(3.4), Inches(1.0), 14, INK)
+        y += Inches(1.75)
+    _notes(s, "E2 is the overload scenario: with Edge already 90% busy, Capacity-Aware moves tasks to Fog when "
+              "Fog can still meet the deadline and rejects, with a reason, those no node can finish in time; "
+              "Latency-First keeps using Edge and runs almost all of them late. E3 is the unauthorised access "
+              "attempt: every read or stop of another tenant's records is refused and logged. E4 changes one "
+              "node at a time: doubling Edge CPU lets more urgent tasks run on Edge, while making Cloud 150 ms "
+              "away pushes medium tasks, whose deadline is 100 ms, off the Cloud.")
 
 
 def conclusion_slide(prs, run: ExperimentRun) -> None:
@@ -299,6 +378,14 @@ def _bullets(slide, items: list[str], x, y, w, h, color: str) -> None:
         run.text = item
         run.font.size, run.font.name = Pt(18), BODY
         run.font.color.rgb = RGBColor.from_string(color)
+
+
+def _terms(slide, rows: list[tuple[str, str]], x, y, symbol_width=Inches(0.55)) -> None:
+    """A two-column legend for a formula: each term in bold, then what it means."""
+    for symbol, meaning in rows:
+        _text(slide, symbol, x, y, symbol_width, Inches(0.32), 14, NAVY, bold=True, font=HEAD)
+        _text(slide, meaning, x + symbol_width, y + Inches(0.02), Inches(7.0) - symbol_width, Inches(0.32), 13, INK)
+        y += Inches(0.3)
 
 
 def _card(slide, x, y, w, h) -> None:
