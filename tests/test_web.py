@@ -30,11 +30,13 @@ def click(at: AppTest, label: str) -> AppTest:
     return at.run()
 
 
-def test_welcome_screen_before_login(monkeypatch):
-    """Before anyone logs in, only the welcome screen shows."""
+def test_starts_logged_in_as_first_tenant(monkeypatch):
+    """The app opens on Home already logged in as hospital-a, the first tenant in tenants.json."""
     at = open_app(monkeypatch, user=None)
     assert not at.exception
-    assert "Choose who you are" in at.info[0].value
+    assert at.sidebar.selectbox(key="login").value == "hospital-a"
+    assert "Logged in as **hospital-a** (tenant)" in at.sidebar.success[0].value
+    assert at.sidebar.radio(key="page").value == "Home"
 
 
 @pytest.mark.parametrize("user", ["hospital-a", "admin"])
@@ -251,12 +253,12 @@ def test_results_page_runs_experiments(monkeypatch):
     assert list(at.dataframe[0].value["result"]) == ["as expected"] * 4
 
 
-def test_home_page_explains_before_login(monkeypatch):
-    """Logged out, Home explains the app, shows the formulas, and keeps the guide buttons disabled."""
+def test_home_page_explains_the_app(monkeypatch):
+    """Home explains the app and shows the formulas, with the guide's buttons ready to use."""
     at = open_app(monkeypatch, user=None)
     assert at.title[0].value == "EdgeFogSim"
-    assert any("L \;=\; d" in latex.value for latex in at.latex)
-    assert at.button(key="quick_start").disabled and at.button(key="open_Workload").disabled
+    assert any(r"L \;=\; d" in latex.value for latex in at.latex)
+    assert not at.button(key="quick_start").disabled and not at.button(key="open_Workload").disabled
 
 
 def test_home_is_the_default_page_after_login(monkeypatch):

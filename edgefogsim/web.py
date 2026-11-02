@@ -135,7 +135,10 @@ def sidebar(settings: Settings) -> tuple[Tenant | None, str, "st.delta_generator
     st.sidebar.title("EdgeFogSim")
     st.sidebar.caption("Edge / Fog / Cloud placement simulator")
     tenant_ids = [t.tenant_id for t in settings.tenants]
-    chosen = st.sidebar.selectbox("Log in as", tenant_ids, index=None, placeholder="Choose a tenant", key="login")
+    # Start logged in as the first ordinary tenant in config/tenants.json (hospital-a by default);
+    # reorder that file to change who it is.
+    default = next((i for i, t in enumerate(settings.tenants) if t.role == "tenant"), None)
+    chosen = st.sidebar.selectbox("Log in as", tenant_ids, index=default, placeholder="Choose a tenant", key="login")
     user = settings.tenant(chosen) if chosen else None
     if user:
         st.sidebar.success(f"Logged in as **{user.tenant_id}** ({user.role})")
