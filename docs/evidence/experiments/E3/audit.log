@@ -1,4 +1,0 @@
-timestamp,actor,target_tenant,resource,outcome
-2026-11-02T23:18:25,hospital-b,hospital-a,task T01,DENIED
-2026-11-02T23:18:25,hospital-b,hospital-a,VM vm-0001,DENIED
-2026-11-02T23:18:25,hospital-b,hospital-a,VM vm-0001,DENIED

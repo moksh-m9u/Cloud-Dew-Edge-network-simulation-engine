@@ -127,7 +127,7 @@ tests/test_vm_manager.py::test_idle_vm_does_not_slow_the_node PASSED     [ 73%]
 tests/test_vm_manager.py::test_every_placed_task_gets_a_vm PASSED        [ 73%]
 tests/test_vm_manager.py::test_stop_then_resubmit_places_a_rejected_task PASSED [ 74%]
 tests/test_vm_manager.py::test_resubmitting_a_running_task_is_refused PASSED [ 75%]
-tests/test_web.py::test_welcome_screen_before_login PASSED               [ 75%]
+tests/test_web.py::test_starts_logged_in_as_first_tenant PASSED          [ 75%]
 tests/test_web.py::test_every_page_loads_for_tenant_and_admin[hospital-a] PASSED [ 76%]
 tests/test_web.py::test_every_page_loads_for_tenant_and_admin[admin] PASSED [ 76%]
 tests/test_web.py::test_generate_matches_menu_and_engine PASSED          [ 77%]
@@ -149,7 +149,7 @@ tests/test_web.py::test_results_page_shows_charts_and_saves PASSED       [ 86%]
 tests/test_web.py::test_results_page_before_after_and_keep PASSED        [ 87%]
 tests/test_web.py::test_results_page_hides_node_change_from_tenants PASSED [ 88%]
 tests/test_web.py::test_results_page_runs_experiments PASSED             [ 88%]
-tests/test_web.py::test_home_page_explains_before_login PASSED           [ 89%]
+tests/test_web.py::test_home_page_explains_the_app PASSED                [ 89%]
 tests/test_web.py::test_home_is_the_default_page_after_login PASSED      [ 90%]
 tests/test_web.py::test_quick_start_loads_samples_and_opens_placement PASSED [ 90%]
 tests/test_web.py::test_guide_and_next_step_buttons_navigate PASSED      [ 91%]
@@ -168,4 +168,4 @@ tests/test_workload.py::test_malformed_csv_row_is_named[T02,hospital-a,2,,high,4
 tests/test_workload.py::test_manual_task_gets_next_id PASSED             [ 99%]
 tests/test_workload.py::test_manual_task_rejects_admin_as_owner PASSED   [100%]
 
-============================= 160 passed in 25.17s =============================
+============================= 160 passed in 29.91s =============================

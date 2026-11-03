@@ -19,7 +19,7 @@ from pptx.util import Emu, Inches, Pt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evidence import ROOT, build_experiments  # noqa: E402
-from team import TEAM  # noqa: E402
+from team import CONTRIBUTIONS, TEAM  # noqa: E402
 
 from edgefogsim.config import load_settings  # noqa: E402
 from edgefogsim.experiments import ExperimentRun  # noqa: E402
@@ -69,18 +69,22 @@ def write_slides(run: ExperimentRun, path: Path = OUTPUT) -> Path:
 
 
 def title_slide(prs) -> None:
-    """Slide 1: name, one-line pitch, team, and the three-tier motif."""
+    """Slide 1: name, one-line pitch, the team with each member's contribution, and the three-tier motif."""
     s = _slide(prs, NAVY)
-    _tier_dots(s, Inches(0.8), Inches(1.4), Inches(0.42))
-    _text(s, "EdgeFogSim", Inches(0.8), Inches(2.2), Inches(11), Inches(1.3), 60, WHITE, font=HEAD, bold=True)
+    _tier_dots(s, Inches(0.8), Inches(0.7), Inches(0.36))
+    _text(s, "EdgeFogSim", Inches(0.8), Inches(1.2), Inches(11), Inches(1.0), 50, WHITE, font=HEAD, bold=True)
     _text(s, "Where should a task run: Edge, Fog or Cloud? A rule-based placement simulator with VMs, "
-             "tenant security and QoS results.", Inches(0.8), Inches(3.6), Inches(10.5), Inches(1.2), 22, "CADCFC")
-    _text(s, "ARM 305 – Cloud, Dev, Edge and Fog Computing · Mini Project", Inches(0.8), Inches(5.5),
-          Inches(10), Inches(0.5), 16, "CADCFC")
-    _text(s, "   ·   ".join(f"{name} {number}" for name, number in TEAM), Inches(0.8), Inches(6.0),
-          Inches(11.8), Inches(0.5), 15, WHITE)
+             "tenant security and QoS results.", Inches(0.8), Inches(2.3), Inches(11.7), Inches(0.9), 20, "CADCFC")
+    _text(s, "ARM 305 – Cloud, Dev, Edge and Fog Computing · Mini Project   ·   Live: cdef-project.streamlit.app",
+          Inches(0.8), Inches(3.3), Inches(11.7), Inches(0.4), 14, "CADCFC")
+    rows = [["Team member", "Enrollment number", "Contribution"]] + [
+        [name, number, CONTRIBUTIONS[name]] for name, number in TEAM]
+    _table(s, rows, Inches(0.8), Inches(4.0), Inches(11.7), [Inches(2.7), Inches(2.6), Inches(6.4)], size=15,
+           dark=True)
     _notes(s, "Introduce the problem: urgent jobs need nearby, small edge nodes; heavy jobs can wait for the "
-              "big, distant cloud. EdgeFogSim simulates choosing where each task runs and measures the result.")
+              "big, distant cloud. EdgeFogSim simulates choosing where each task runs and measures the result. "
+              "Then introduce the team and who built which part: " +
+              "; ".join(f"{name}: {CONTRIBUTIONS[name].lower()}" for name, _ in TEAM) + ".")
 
 
 def system_slide(prs) -> None:
@@ -450,8 +454,10 @@ def _tier_dots(slide, x, y, size) -> None:
         dot.shadow.inherit = False
 
 
-def _table(slide, rows: list[list], x, y, w, widths: list, size: float = 14) -> None:
-    """A table with a navy header row."""
+def _table(slide, rows: list[list], x, y, w, widths: list, size: float = 14, dark: bool = False) -> None:
+    """A table with a header row: navy header on light slides, or ice-blue header and navy rows on dark ones."""
+    header_fill, header_ink = ("CADCFC", NAVY) if dark else (NAVY, WHITE)
+    body_fill, body_ink = ("1F3157", WHITE) if dark else (WHITE, INK)
     shape = slide.shapes.add_table(len(rows), len(rows[0]), x, y, w, Inches(0.42) * len(rows))
     table = shape.table
     for j, width in enumerate(widths):
@@ -460,13 +466,13 @@ def _table(slide, rows: list[list], x, y, w, widths: list, size: float = 14) -> 
         for j, value in enumerate(row):
             cell = table.cell(i, j)
             cell.fill.solid()
-            cell.fill.fore_color.rgb = RGBColor.from_string(NAVY if i == 0 else WHITE)
+            cell.fill.fore_color.rgb = RGBColor.from_string(header_fill if i == 0 else body_fill)
             frame = cell.text_frame
             frame.paragraphs[0].text = ""
             run = frame.paragraphs[0].add_run()
             run.text = str(value)
             run.font.size, run.font.name, run.font.bold = Pt(size), BODY, i == 0
-            run.font.color.rgb = RGBColor.from_string(WHITE if i == 0 else INK)
+            run.font.color.rgb = RGBColor.from_string(header_ink if i == 0 else body_ink)
 
 
 def _notes(slide, text: str) -> None:

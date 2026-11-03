@@ -12,7 +12,7 @@ CONTRIBUTIONS = {
     "Moksh": "Placement policies, simulator, experiments",
     "Bhavya Bisht": "VM manager and security, Streamlit app",
     "Dhruv Sharma": "Results export and charts, testing",
-    "Bhuwan Chugh": "Report, slides, architecture diagram",
+    "Bhuwan Chugh": "Settings system, workload generator and task files, command-line menu; report, slides, architecture diagram",
 }
 
 

@@ -1,5 +1,8 @@
 # EdgeFogSim
 
+> Live demo: [cdef-project.streamlit.app](https://cdef-project.streamlit.app/)      
+> The Streamlit app is deployed and running. Open it in a browser, no installation needed. It starts logged in as hospital-a; switch tenant from the sidebar.
+
 A locally runnable Python simulator that places computing tasks on Edge, Fog or Cloud nodes, simulates VMs and tenant isolation, and reports QoS results. ARM 305 Cloud, Dev, Edge and Fog Computing mini project.
 
 <p align="center">
@@ -9,6 +12,15 @@ A locally runnable Python simulator that places computing tasks on Edge, Fog or 
 </p>
 
 > **Status:** complete for submission: simulator, both interfaces, the four experiments, report, slides and submission ZIP. See [docs/SPEC.md](docs/SPEC.md) for the full spec and acceptance criteria.
+
+## Team
+
+| Name | Enrollment number | Contribution |
+|------|-------------------|--------------|
+| Moksh | 06719051624 | Placement policies, simulator, experiments |
+| Bhavya Bisht | 05019051624 | VM manager and security, Streamlit app |
+| Dhruv Sharma | 05719051624 | Results export and charts, testing |
+| Bhuwan Chugh | 04219051624 | Settings system, workload generator and task files, command-line menu; report, slides, architecture diagram |
 
 ## Setup
 
@@ -31,6 +43,8 @@ python -m edgefogsim
 ```
 
 **Streamlit app in your browser**
+
+The deployed app is live and ready to test: [cdef-project.streamlit.app](https://cdef-project.streamlit.app/).
 
 ```bash
 python -m edgefogsim web
