@@ -1,5 +1,5 @@
 ============================= test session starts ==============================
-platform darwin -- Python 3.14.6, pytest-9.2.0, pluggy-1.7.0 -- /Users/moksh/CDEF Projects/.venv/bin/python
+platform darwin -- Python 3.14.6, pytest-9.2.0, pluggy-1.7.0 -- /Users/moksh/CDEF Projects/.venv/bin/python3
 cachedir: .pytest_cache
 rootdir: /Users/moksh/CDEF Projects
 configfile: pyproject.toml
@@ -168,4 +168,4 @@ tests/test_workload.py::test_malformed_csv_row_is_named[T02,hospital-a,2,,high,4
 tests/test_workload.py::test_manual_task_gets_next_id PASSED             [ 99%]
 tests/test_workload.py::test_manual_task_rejects_admin_as_owner PASSED   [100%]
 
-============================= 160 passed in 29.91s =============================
+============================= 160 passed in 28.44s =============================
